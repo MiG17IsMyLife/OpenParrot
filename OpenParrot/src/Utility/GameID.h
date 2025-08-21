@@ -138,5 +138,7 @@ enum class GameID
 	UnderNightAPM3Test,
 	OtoshuDX,
 	ElevatorActionDeathParade,
-	FrenzyExpress
+	FrenzyExpress,
+	AmAuthD64,
+	MaxiTerminal
 };

@@ -7,6 +7,12 @@
 #include <iostream>
 #include <Windowsx.h>
 #include <Utility/TouchSerial/MT6.h>
+#include "Network/Certificate.cpp"
+#include "Network/AddressHook.cpp"
+#include "Banapass/BanapassEmuwM6.h"
+#include <Shlwapi.h>
+#include "json/json.hpp"
+#include <tlhelp32.h>
 #ifdef _M_AMD64
 #pragma optimize("", off)
 #pragma comment(lib, "Ws2_32.lib")
@@ -14,16 +20,51 @@
 extern LPCSTR hookPort;
 static uintptr_t imageBase;
 static unsigned char hasp_buffer[0xD40];
-static bool isFreePlay;
-static bool isEventMode2P;
-static bool isEventMode4P;
-static bool ForceFullTune;
-static bool ForceNeon;
-static bool CarTuneNeonThread;
 static const char* ipaddr;
 
-static DWORD mileageValue = 0;
-static int NeonColour;
+
+// Data for Force Feedback OFF
+static unsigned char settingData[481] = {
+	0x1F, 0x8B, 0x08, 0x00, 0xE4, 0xD8, 0x1E, 0x64, 0x00, 0xFF, 0x85, 0x94, 0xDB, 0x6E, 0xE2, 0x30,
+	0x10, 0x86, 0xEF, 0x79, 0x0A, 0x5E, 0x80, 0xAA, 0x04, 0x96, 0xB2, 0x17, 0x7B, 0x01, 0x81, 0x2C,
+	0x95, 0x9A, 0x2D, 0x82, 0xA8, 0xD5, 0xF6, 0xCE, 0x38, 0x03, 0xB1, 0xF0, 0x01, 0x39, 0xF6, 0xAE,
+	0x78, 0xFB, 0x1D, 0xC7, 0x39, 0x38, 0x2D, 0x5A, 0xB8, 0x88, 0xF8, 0xBF, 0xDF, 0x33, 0x99, 0xF1,
+	0x8C, 0x32, 0x1A, 0xFD, 0xFF, 0x37, 0x70, 0x8F, 0x61, 0x09, 0xC6, 0x30, 0x79, 0x7A, 0xE0, 0x96,
+	0x0C, 0xEE, 0x04, 0x8C, 0x06, 0x03, 0x11, 0x13, 0xCE, 0x0E, 0x1B, 0x22, 0x73, 0x0E, 0x31, 0x48,
+	0x03, 0x7A, 0xF8, 0x63, 0x38, 0x89, 0x9E, 0x66, 0xF3, 0xDA, 0x5A, 0x50, 0x0A, 0xBC, 0x75, 0x1E,
+	0x6B, 0xBA, 0xD4, 0xE4, 0x0C, 0x5F, 0x68, 0xAA, 0x8C, 0xD2, 0x2D, 0xFD, 0x36, 0x1E, 0xD7, 0x3C,
+	0x53, 0x96, 0x16, 0x2F, 0x70, 0x34, 0x48, 0xA3, 0xC7, 0xE9, 0x3C, 0xC4, 0x3B, 0x76, 0x2A, 0x1C,
+	0x1F, 0x4F, 0x27, 0x93, 0x59, 0x68, 0x64, 0xEA, 0x72, 0x0B, 0x2F, 0x95, 0x31, 0x4A, 0x74, 0x89,
+	0x14, 0x93, 0x71, 0x61, 0x0D, 0xB8, 0xB3, 0x03, 0xB1, 0xB4, 0xD7, 0x98, 0xE8, 0x3C, 0x56, 0xA5,
+	0xCB, 0x89, 0xFE, 0x4F, 0x22, 0xA0, 0x56, 0x13, 0x77, 0x5A, 0xE2, 0xDD, 0xD8, 0x80, 0x24, 0x96,
+	0xF3, 0x58, 0x59, 0x5D, 0x36, 0xEC, 0x09, 0x99, 0x06, 0xD8, 0x72, 0x72, 0xF5, 0x29, 0xB7, 0xF4,
+	0xF0, 0x9C, 0xFB, 0x26, 0x9F, 0xA9, 0x4B, 0xBE, 0xFB, 0xEB, 0x0D, 0xAF, 0xDE, 0x40, 0xE6, 0xCD,
+	0x25, 0xA4, 0xA7, 0xD6, 0x47, 0x95, 0x28, 0x4D, 0x21, 0x01, 0xC8, 0x0F, 0x84, 0x9E, 0x3D, 0x7A,
+	0x67, 0xB2, 0x5C, 0xC8, 0x7C, 0x07, 0x82, 0xE0, 0x3F, 0x9F, 0x66, 0xFD, 0x07, 0x2F, 0x2C, 0x55,
+	0x39, 0xF8, 0x23, 0xAD, 0x5C, 0xB1, 0xAA, 0x9E, 0x10, 0x61, 0xA1, 0xD2, 0xB1, 0x69, 0xC0, 0x22,
+	0x25, 0xA3, 0x7A, 0x04, 0x5C, 0x95, 0x90, 0x5D, 0x2F, 0x2E, 0x51, 0x54, 0xCB, 0xBD, 0x95, 0xA8,
+	0xBE, 0xCF, 0x6A, 0x99, 0xAA, 0x9E, 0xCC, 0x2C, 0x84, 0xF2, 0x1D, 0xF2, 0x9E, 0x5B, 0xD8, 0x50,
+	0x26, 0x9A, 0x85, 0x72, 0x4F, 0x4C, 0x28, 0x57, 0xD5, 0x75, 0x39, 0x59, 0x4D, 0x69, 0x4B, 0x24,
+	0x70, 0xDF, 0x9F, 0x9B, 0xC0, 0x9B, 0xAA, 0x04, 0x16, 0xB9, 0x30, 0x46, 0x13, 0x6A, 0x3A, 0x80,
+	0xD1, 0xF4, 0xFC, 0x7A, 0x3C, 0xE2, 0xDA, 0xFA, 0x36, 0x32, 0x26, 0xE0, 0x43, 0xC9, 0xA6, 0x13,
+	0x37, 0x7D, 0x87, 0xF0, 0x05, 0x2F, 0xF5, 0xAA, 0x04, 0x87, 0x36, 0x38, 0xBA, 0x36, 0x78, 0xDE,
+	0xF1, 0x94, 0xC9, 0x30, 0xE7, 0xDE, 0x0A, 0x01, 0xDA, 0x99, 0xBD, 0x80, 0x9E, 0xF3, 0x29, 0x04,
+	0xDB, 0xD0, 0x12, 0x4B, 0x0F, 0x67, 0xD3, 0xB1, 0x8D, 0xE2, 0xF9, 0x6F, 0x20, 0xBA, 0xDA, 0xC3,
+	0xF1, 0xEC, 0xB3, 0x85, 0xF7, 0x6C, 0x0A, 0xDF, 0x7E, 0xDF, 0x58, 0x35, 0x5B, 0xD5, 0xE1, 0xB5,
+	0x34, 0xFA, 0xEA, 0xCA, 0xBA, 0x69, 0x60, 0x55, 0x7E, 0xB9, 0xBF, 0xBC, 0xBE, 0x09, 0x89, 0x42,
+	0xA3, 0x70, 0x2F, 0xBF, 0x19, 0x12, 0x2B, 0x71, 0x01, 0xC3, 0x0C, 0x53, 0xF2, 0x97, 0x15, 0x7E,
+	0x89, 0x3A, 0x77, 0x4B, 0xB4, 0x61, 0x94, 0x5D, 0x88, 0x34, 0xDE, 0xC5, 0x9E, 0xEE, 0x7E, 0x3C,
+	0xAA, 0xCF, 0xCD, 0xFA, 0x35, 0xB9, 0x7F, 0xF2, 0x1F, 0xDD, 0x12, 0x36, 0xDA, 0xBA, 0x04, 0x00,
+	0x00
+};
+
+static std::string removeCharsFromString(std::string& str, char* charsToRemove) {
+	for (unsigned int i = 0; i < strlen(charsToRemove); ++i) {
+		str.erase(remove(str.begin(), str.end(), charsToRemove[i]), str.end());
+	}
+
+	return str;
+}
 
 #define HASP_STATUS_OK 0
 static unsigned int Hook_hasp_login(int feature_id, void* vendor_code, int hasp_handle) {
@@ -74,6 +115,15 @@ static unsigned int Hook_hasp_write(int hasp_handle, int hasp_fileid, unsigned i
 	return HASP_STATUS_OK;
 }
 
+//set system date patch by pockywitch
+typedef bool (WINAPI* SETSYSTEMTIME)(SYSTEMTIME* in);
+static SETSYSTEMTIME pSetSystemTime = NULL;
+
+static bool WINAPI Hook_SetSystemTime(SYSTEMTIME* in)
+{
+	return TRUE;
+}
+
 typedef int (WINAPI* BIND)(SOCKET, CONST SOCKADDR*, INT);
 static BIND pbind = NULL;
 
@@ -93,14 +143,6 @@ static unsigned int WINAPI Hook_bind(SOCKET s, const sockaddr* addr, int namelen
 		return pbind(s, addr, namelen);
 
 	}
-}
-
-static BOOL FileExists(char* szPath)
-{
-	DWORD dwAttrib = GetFileAttributesA(szPath);
-
-	return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
-		!(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 }
 
 static int ReturnTrue()
@@ -203,20 +245,311 @@ static void Hook_OutputDebugStringA(LPCSTR str)
 	printf("debug> %s", str);
 }
 
-extern int* ffbOffset;
-extern int* ffbOffset2;
-extern int* ffbOffset3;
-extern int* ffbOffset4;
+// Fix Crash
+char hook_chargeCrash_6(int a1, int a2) {
+	return 1;
+}
+
+static void patchResolution() {
+	// thx kitsu
+	std::string ystr = config["General"]["Resolution"];
+
+	int32_t yRes = std::stoi(ystr);
+	int32_t xRes = (16 * yRes) / 9;
+	float ratio = (float)765.0 / (float)yRes;
+
+	if (yRes == 768) { return; }
+	// custom scaling machine code
+	// shape
+	injector::WriteMemoryRaw(imageBase + 0x909496, "\xE9\xD5\x5F\x5F\x00\x90", 6, true);
+	injector::WriteMemoryRaw(imageBase + 0xEFF470, "\xC7\x45\xD8\x55\x55\x35\x3F\xF3\x44\x0F\x59\x5D\xD8\xF3\x44\x0F\x11\x5D\xD8\xE9\x14\xA0\xA0\xFF", 24, true);
+
+	// text
+	injector::WriteMemoryRaw(imageBase + 0x90C852, "\xE9\x31\x2C\x5F\x00\x90\x90\x90\x90", 9, true);
+	injector::WriteMemoryRaw(imageBase + 0xEFF488, "\xC7\x85\xF8\x00\x00\x00\x55\x55\x35\x3F\xF3\x44\x0F\x59\xB5\xF8\x00\x00\x00\xF3\x44\x0F\x11\xB5\xF8\x00\x00\x00\xE9\xB2\xD3\xA0\xFF", 33, true);
 
 
-static __int64(__fastcall* g_origMileageFix)(__int64);
+	// window res
+	injector::WriteMemory<short>(imageBase + 0x26A5EB, xRes, true);
+	injector::WriteMemory<short>(imageBase + 0x26A5F1, yRes, true);
+	injector::WriteMemory<short>(imageBase + 0xB2D102, xRes, true);
+	injector::WriteMemory<short>(imageBase + 0xB2D10F, yRes, true);
+	injector::WriteMemory<short>(imageBase + 0xB2D82B, xRes, true);
+	injector::WriteMemory<short>(imageBase + 0xB2D833, yRes, true);
 
-static __int64 __fastcall MileageFix(__int64 a1)
+
+	// 16:9 specific stuff
+	// shape
+	injector::WriteMemory<float>(imageBase + 0xEFF473, ratio, true);
+
+	// text
+	injector::WriteMemory<float>(imageBase + 0xEFF48E, ratio, true);
+}
+
+// Borderless Fullscreen
+static HWND(WINAPI* CreateWindowExAOri)(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam);
+static HWND WINAPI CreateWindowExAHook(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
 {
-	//*(DWORD*)(a1 + 224) = mileageValue;
-	//auto result = g_origMileageFix(a1);
-	//mileageValue += *(DWORD*)(a1 + 228);
-	return g_origMileageFix(a1);
+	int w = GetSystemMetrics(SM_CXSCREEN);
+	int h = GetSystemMetrics(SM_CYSCREEN);
+
+	dwStyle = SWP_FRAMECHANGED | SWP_SHOWWINDOW | WS_POPUP | SWP_NOSIZE;
+
+	return CreateWindowExAOri(dwExStyle, lpClassName, lpWindowName, dwStyle, 0, 0, w, h, hWndParent, hMenu, hInstance, lpParam);
+}
+
+static HWND(WINAPI* CreateWindowExWOri)(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam);
+static HWND WINAPI CreateWindowExWHook(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
+{
+	int w = GetSystemMetrics(SM_CXSCREEN);
+	int h = GetSystemMetrics(SM_CYSCREEN);
+
+	dwStyle = SWP_FRAMECHANGED | SWP_SHOWWINDOW | WS_POPUP | SWP_NOSIZE;
+
+	return CreateWindowExWOri(dwExStyle, lpClassName, lpWindowName, dwStyle, 0, 0, w, h, hWndParent, hMenu, hInstance, lpParam);
+}
+
+static std::string getProfileString(LPCSTR name, LPCSTR key, LPCSTR def, LPCSTR filename)
+{
+	char temp[1024];
+	int result = GetPrivateProfileStringA(name, key, def, temp, sizeof(temp), filename);
+	return std::string(temp, result);
+}
+
+#define WanganStruct struct __declspec(align(1)) alignas(1)
+#pragma pack(push, 1)
+WanganStruct BGMInfo{
+	char name[64];
+	int type;
+};
+#pragma pack(pop)
+
+const char** customSongs = NULL;
+const char** customSongNames = NULL;
+int numCustomSongs = 0;
+
+const char* (__cdecl* old_GetBgmFile)(int id);
+const char* jmp_GetBgmFile(int id) {
+	if (id >= 143)
+		return customSongs[id - 143];
+	return old_GetBgmFile(id);
+}
+
+int jmp_SoundManager_GetBGMStart(int type) {
+	return 143;
+}
+
+int jmp_SoundManager_GetBGMEnd(int type) {
+	return 143 + (numCustomSongs);
+}
+
+void* (__cdecl* old_SoundManager_GetBGMInfo)(BGMInfo* info, int id);
+void* jmp_SoundManager_GetBGMInfo(BGMInfo* info, int id) {
+	if (id >= 143) {
+		_snprintf_s(info->name, 0x40, 0xffffffffffffffff, customSongNames[id - 143]);
+		info->type = 1; // type
+		return info;
+	}
+	return old_SoundManager_GetBGMInfo(info, id);
+}
+
+void populateSongList() {
+	CreateDirectoryA("./customSongs", nullptr);
+	WIN32_FIND_DATAA ffd;
+	HANDLE hFind = INVALID_HANDLE_VALUE;
+
+	char searchPath[MAX_PATH];
+	snprintf(searchPath, MAX_PATH, "./customSongs/*.nub");
+
+	hFind = FindFirstFileA(searchPath, &ffd);
+
+	if (hFind == INVALID_HANDLE_VALUE) {
+		std::cerr << "No files found.\n";
+		return;
+	}
+
+	do {
+		if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) { // Check if it's not a directory
+			std::cout << "found custom bgm at: " << ffd.cFileName << "\n";
+
+			char songPath[MAX_PATH];
+			snprintf(songPath, MAX_PATH, "./customSongs/%s", ffd.cFileName);
+
+			// Get the filename without extension
+			char fileNameWithoutExt[MAX_PATH];
+			strncpy(fileNameWithoutExt, ffd.cFileName, MAX_PATH);
+			PathRemoveExtensionA(fileNameWithoutExt);
+
+			customSongs = (const char**)realloc(customSongs, (numCustomSongs + 1) * sizeof(const char*));
+			customSongNames = (const char**)realloc(customSongNames, (numCustomSongs + 1) * sizeof(const char*));
+
+			customSongs[numCustomSongs] = strdup(songPath);
+
+			// Create the formatted song name with index
+			char indexedSongName[MAX_PATH];
+			snprintf(indexedSongName, MAX_PATH, "%d. %s", numCustomSongs + 1, fileNameWithoutExt);
+
+			customSongNames[numCustomSongs] = strdup(indexedSongName);
+
+			numCustomSongs++;
+		}
+	} while (FindNextFileA(hFind, &ffd) != 0);
+
+	FindClose(hFind);
+}
+
+bool isProcessRunning() {
+	PROCESSENTRY32 entry;
+	entry.dwSize = sizeof(PROCESSENTRY32);
+
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snapshot == INVALID_HANDLE_VALUE) {
+		return false;
+	}
+
+	if (Process32First(snapshot, &entry)) {
+		do {
+			if (_wcsicmp(entry.szExeFile, L"maxiterminal.exe") == 0) {
+				CloseHandle(snapshot);
+				return true;
+			}
+		} while (Process32Next(snapshot, &entry));
+	}
+
+	CloseHandle(snapshot);
+	return false;
+}
+
+static void launchMaxiTerminalIfNotRunning(const std::string& currentDir) {
+	std::string exeName = "maxiterminal.exe";
+	std::string maxiterminalPath = currentDir + "\\" + exeName;
+
+	if (GetFileAttributesA(maxiterminalPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+		MessageBoxA(NULL,
+			"maxiterminal.exe not found in game folder.\nPlease ensure it exists.",
+			"Error", MB_ICONERROR | MB_OK);
+		throw std::exception();
+	}
+
+	if (isProcessRunning()) {
+		// Already running ¡ª skip launching
+		return;
+	}
+	else
+	{
+		using json = nlohmann::json;
+		// Check config.json
+		if (FILE* file = fopen("config.json", "r"))
+		{
+			fclose(file);
+		}
+		else
+		{
+			// Default config.json
+			static const unsigned char configFile[] = {
+				0x7B, 0x0A, 0x20, 0x20, 0x22, 0x61, 0x64, 0x61, 0x70, 0x74, 0x65, 0x72, 0x22, 0x3A, 0x20, 0x22,
+				0x30, 0x2E, 0x30, 0x2E, 0x30, 0x2E, 0x30, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x62, 0x75, 0x79,
+				0x63, 0x61, 0x72, 0x64, 0x5F, 0x63, 0x6F, 0x73, 0x74, 0x22, 0x3A, 0x20, 0x38, 0x2C, 0x0A, 0x20,
+				0x20, 0x22, 0x63, 0x6F, 0x69, 0x6E, 0x5F, 0x63, 0x68, 0x75, 0x74, 0x65, 0x22, 0x3A, 0x20, 0x31,
+				0x2C, 0x0A, 0x20, 0x20, 0x22, 0x63, 0x6F, 0x6E, 0x74, 0x69, 0x6E, 0x75, 0x65, 0x5F, 0x63, 0x6F,
+				0x73, 0x74, 0x22, 0x3A, 0x20, 0x33, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x65, 0x76, 0x65, 0x6E, 0x74,
+				0x5F, 0x32, 0x6F, 0x6E, 0x32, 0x22, 0x3A, 0x20, 0x22, 0x30, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22,
+				0x65, 0x76, 0x65, 0x6E, 0x74, 0x5F, 0x64, 0x6F, 0x75, 0x62, 0x6C, 0x65, 0x22, 0x3A, 0x20, 0x22,
+				0x30, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x65, 0x76, 0x65, 0x6E, 0x74, 0x5F, 0x6D, 0x6F, 0x64,
+				0x65, 0x22, 0x3A, 0x20, 0x22, 0x30, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x65, 0x76, 0x65, 0x6E,
+				0x74, 0x5F, 0x6D, 0x6F, 0x64, 0x65, 0x5F, 0x63, 0x6F, 0x75, 0x6E, 0x74, 0x22, 0x3A, 0x20, 0x22,
+				0x34, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x65, 0x76, 0x65, 0x6E, 0x74, 0x5F, 0x73, 0x65, 0x72,
+				0x69, 0x61, 0x6C, 0x22, 0x3A, 0x20, 0x22, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30,
+				0x30, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x66, 0x65, 0x61, 0x74, 0x75, 0x72, 0x65, 0x5F, 0x6D,
+				0x6F, 0x6E, 0x74, 0x68, 0x22, 0x3A, 0x20, 0x22, 0x30, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x66,
+				0x65, 0x61, 0x74, 0x75, 0x72, 0x65, 0x5F, 0x70, 0x6C, 0x75, 0x73, 0x65, 0x73, 0x22, 0x3A, 0x20,
+				0x22, 0x30, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x66, 0x65, 0x61, 0x74, 0x75, 0x72, 0x65, 0x5F,
+				0x72, 0x65, 0x6C, 0x65, 0x61, 0x73, 0x65, 0x5F, 0x61, 0x74, 0x22, 0x3A, 0x20, 0x22, 0x30, 0x22,
+				0x2C, 0x0A, 0x20, 0x20, 0x22, 0x66, 0x65, 0x61, 0x74, 0x75, 0x72, 0x65, 0x5F, 0x79, 0x65, 0x61,
+				0x72, 0x22, 0x3A, 0x20, 0x22, 0x30, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x66, 0x72, 0x65, 0x65,
+				0x70, 0x6C, 0x61, 0x79, 0x22, 0x3A, 0x20, 0x22, 0x31, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x66,
+				0x75, 0x6C, 0x6C, 0x63, 0x6F, 0x75, 0x72, 0x73, 0x65, 0x5F, 0x63, 0x6F, 0x73, 0x74, 0x22, 0x3A,
+				0x20, 0x37, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x67, 0x61, 0x6D, 0x65, 0x5F, 0x63, 0x6F, 0x73, 0x74,
+				0x22, 0x3A, 0x20, 0x33, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x6F, 0x6E, 0x6C, 0x69, 0x6E, 0x65, 0x5F,
+				0x6D, 0x6F, 0x64, 0x65, 0x22, 0x3A, 0x20, 0x22, 0x31, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x70,
+				0x61, 0x63, 0x6B, 0x65, 0x74, 0x5F, 0x69, 0x6E, 0x74, 0x65, 0x72, 0x76, 0x61, 0x6C, 0x22, 0x3A,
+				0x20, 0x22, 0x35, 0x30, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x70, 0x63, 0x62, 0x5F, 0x73, 0x65,
+				0x72, 0x69, 0x61, 0x6C, 0x22, 0x3A, 0x20, 0x22, 0x32, 0x38, 0x30, 0x38, 0x31, 0x31, 0x39, 0x39,
+				0x30, 0x30, 0x30, 0x33, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72,
+				0x5F, 0x75, 0x72, 0x69, 0x22, 0x3A, 0x20, 0x22, 0x68, 0x74, 0x74, 0x70, 0x73, 0x3A, 0x2F, 0x2F,
+				0x77, 0x61, 0x6E, 0x67, 0x61, 0x6E, 0x2E, 0x6E, 0x65, 0x74, 0x77, 0x6F, 0x72, 0x6B, 0x3A, 0x39,
+				0x30, 0x30, 0x32, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x73, 0x6F, 0x66, 0x74, 0x77, 0x61, 0x72,
+				0x65, 0x5F, 0x72, 0x65, 0x76, 0x69, 0x73, 0x69, 0x6F, 0x6E, 0x22, 0x3A, 0x20, 0x22, 0x31, 0x30,
+				0x33, 0x30, 0x34, 0x22, 0x2C, 0x0A, 0x20, 0x20, 0x22, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6F, 0x6E,
+				0x22, 0x3A, 0x20, 0x31, 0x30, 0x0A, 0x7D
+			};
+
+			// Create config.json
+			FILE* file2 = fopen("config.json", "wb");
+
+			fwrite(configFile, 1, sizeof(configFile), file2);
+			fclose(file2);
+		}
+
+		// Read config.json
+		std::ifstream in("config.json");
+		json file = json::parse(in);
+
+		// Update the json data value
+		std::string gameRevision = removeCharsFromString(config["Version"]["GameRevision"], ".");
+		file["adapter"] = "0.0.0.0"; // config["General"]["NetworkAdapterIP"];
+		file["server_uri"] = "https://wangan.network:9002";
+		file["pcb_serial"] = "280811990003";
+		file["software_revision"] = "10304";
+		file["version"] = 10;
+
+		// Erase useless json data
+		file.erase("adapter_ip");
+
+		// Save the updated json data
+		std::ofstream out("config.json");
+		out << std::setw(4) << file << std::endl;
+
+		// Close fstream
+		in.close();
+		out.close();
+	}
+
+	WinExec(maxiterminalPath.c_str(), SW_SHOWNORMAL);
+}
+
+static void checkCard()
+{
+	char accessCode[64] = { 0 };
+	char chipId[64] = { 0 };
+
+	GetPrivateProfileStringA("card", "accessCode", "", accessCode, sizeof(accessCode), ".\\card.ini");
+	GetPrivateProfileStringA("card", "chipId", "", chipId, sizeof(chipId), ".\\card.ini");
+
+	if (strcmp(accessCode, "0") == 0 || strcmp(chipId, "0") == 0) {
+		HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+		if (hSnapshot != INVALID_HANDLE_VALUE) {
+			PROCESSENTRY32 pe32;
+			pe32.dwSize = sizeof(PROCESSENTRY32);
+
+			if (Process32First(hSnapshot, &pe32)) {
+				do {
+					if (_wcsicmp(pe32.szExeFile, L"maxiterminal.exe") == 0) {
+						HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
+						if (hProc) {
+							TerminateProcess(hProc, 1); // Exit code 1
+							CloseHandle(hProc);
+						}
+					}
+				} while (Process32Next(hSnapshot, &pe32));
+			}
+		}
+		CloseHandle(hSnapshot);
+		MessageBoxA(NULL,
+			"Detected Card.ini contains invalid value.\nPlease head over to Project Asakura support channel for assistance.",
+			"Error", MB_ICONERROR | MB_OK);
+		throw std::exception();
+	}
 }
 
 static InitFunction Wmmt6Func([]()
@@ -242,10 +575,20 @@ static InitFunction Wmmt6Func([]()
 
 	puts("hello there, maxitune");
 
-	// folder for path redirections
+	// Borderless Fullscreen
+	if (!ToBool(config["General"]["Windowed"]))
+	{
+		if (ToBool(config["General"]["Borderless Fullscreen"]))
+		{
+			MH_CreateHookApi(L"user32.dll", "CreateWindowExW", CreateWindowExWHook, (void**)&CreateWindowExWOri);
+			MH_CreateHookApi(L"user32.dll", "CreateWindowExA", CreateWindowExAHook, (void**)&CreateWindowExAOri);
+		}
+	}
+
+	// Folder for Path Redirections
 	CreateDirectoryA(".\\TP", nullptr);
 
-	/*
+	// Create the Setting Data
 	FILE* fileF = _wfopen(L".\\TP\\setting.lua.gz", L"r");
 	if (fileF == NULL)
 	{
@@ -257,7 +600,9 @@ static InitFunction Wmmt6Func([]()
 	{
 		fclose(fileF);
 	}
-	*/
+
+	// Prepare Certs
+	prepareCerts();
 
 	bool isTerminal = false;
 	if (ToBool(config["General"]["TerminalMode"]))
@@ -284,19 +629,15 @@ static InitFunction Wmmt6Func([]()
 	MH_CreateHookApi(L"hasp_windows_x64_28756.dll", "hasp_logout", Hook_hasp_logout, NULL);
 	MH_CreateHookApi(L"hasp_windows_x64_28756.dll", "hasp_login", Hook_hasp_login, NULL);
 	MH_CreateHookApi(L"WS2_32", "bind", Hook_bind, reinterpret_cast<LPVOID*>(&pbind));
-	MH_CreateHook((void*)(imageBase + 0x35AAC0), MileageFix, (void**)&g_origMileageFix);
-
 	MH_CreateHookApi(L"kernel32", "OutputDebugStringA", Hook_OutputDebugStringA, NULL);
+	MH_CreateHookApi(L"dnsapi.dll", "DnsQuery_A", DnsQuery_AHook, (void**)&g_origDnsQuery_A);
+	MH_CreateHookApi(L"dnsapi.dll", "DnsQueryEx", DnsQueryExHook, (void**)&g_origDnsQueryEx);
+	MH_CreateHookApi(L"ws2_32.dll", "getaddrinfo", getaddrinfoHook, (void**)&g_origgetaddrinfo);
+	MH_CreateHookApi(L"ws2_32.dll", "InetPtonW", InetPtonWHook, (void**)&g_origInetPtonW);
 	// CreateFile* hooks are in the JVS FILE
 
-	// Give me the HWND please maxitune
-	MH_CreateHookApi(L"user32", "ShowWindow", Hook_ShowWindow, reinterpret_cast<LPVOID*>(&pShowWindow));
-	//MH_CreateHookApi(L"kernel32", "ReadFile", Hook_ReadFile, reinterpret_cast<LPVOID*>(&pReadFile));
-
-	// Hook the window procedure
-	// (The image starts at 0x140000000)
-	//MH_CreateHook((void*)(imageBase + 0xB7C030), Hook_WndProc, (void**)&pMaxituneWndProc);
-	pMaxituneWndProc = (WindowProcedure_t)(imageBase + 0xB7C030);
+	// Prevents game from setting time, thanks pockywitch!
+	MH_CreateHookApi(L"KERNEL32", "SetSystemTime", Hook_SetSystemTime, reinterpret_cast<LPVOID*>(&pSetSystemTime));
 
 	GenerateDongleData(isTerminal);
 
@@ -312,48 +653,54 @@ static InitFunction Wmmt6Func([]()
 	// Best LAN setting by doomertheboomer
 	injector::WriteMemory<BYTE>(imageBase + 0xA36CAA, 0xEB, true); //content router patch
 	injector::MakeNOP(imageBase + 0x690876, 2, true);
-	
-	// wtf is this?
-	//injector::MakeNOP(hook::get_pattern("45 33 C0 BA 65 09 00 00 48 8D 4D B0 E8 ? ? ? ? 48 8B 08", 12), 5);
 
 	auto location = hook::get_pattern<char>("48 83 EC 28 33 D2 B9 70 00 02 00 E8 ? ? ? ? 85 C0 79 06");
-	//injector::WriteMemory<uint8_t>(location + 0x12, 0xEB, true);
-
-	// First auth error skip
-	//injector::WriteMemory<BYTE>(imageBase + 0x6A0077, 0xEB, true);
 
 	if (isTerminal)
 	{
-		// I don't know what these do but they stop the game from
-		// throwing a fit on the dongle error
-		// so I'm leaving them in here.
-
-		// Dongle error?
-		//safeJMP(hook::get_pattern("0F B6 41 05 2C 30 3C 09 77 04 0F BE C0 C3 83 C8 FF C3"), ReturnTrue);
-	
 		// More dongle error shit?
 		safeJMP(hook::get_pattern("8B 01 0F B6 40 78 C3 CC CC CC CC"), ReturnTrue);
+
+		// Give me the HWND please maxitune
+		MH_CreateHookApi(L"user32", "ShowWindow", Hook_ShowWindow, reinterpret_cast<LPVOID*>(&pShowWindow));
+
+		// Hook the window procedure
+		pMaxituneWndProc = (WindowProcedure_t)(imageBase + 0xB7C030);
 	}
 	else
 	{
 		// Terminal on same machine check.
 		injector::MakeNOP(hook::get_pattern("74 ? 80 7B 31 00 75 ? 48 8B 43 10 80 78 31 00 75 1A 48 8B D8 48 8B 00 80 78 31 00 75 ? 48 8B D8"), 2);
 
-		/*
-		injector::WriteMemory<WORD>(imageBase + 0x6A0C87, 0x00D1, true);		
-		injector::WriteMemory<BYTE>(imageBase + 0x20B88A, 0x90, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x20B88B, 0x90, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x20B89B, 0x90, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x20B89C, 0x90, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x20B8A1, 0x90, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x20B8A2, 0x90, true);
-
-		// spam thread
-		if (ToBool(config["General"]["TerminalEmulator"]))
+		std::string res = config["General"]["Resolution"];
+		int32_t Res = std::stoi(res);
+		if (Res != 768)
 		{
-			CreateThread(0, 0, SpamMulticast, 0, 0, 0);
+			// resolution patch
+			patchResolution();
 		}
-		*/
+
+		if (ToBool(config["General"]["Use custom playlist"])) {
+			populateSongList();
+
+			if (numCustomSongs != 0) {
+				// thanks for hooks axy
+				safeJMP(imageBase + 0x729d90, jmp_SoundManager_GetBGMStart);
+				safeJMP(imageBase + 0x729e90, jmp_SoundManager_GetBGMEnd);
+				MH_CreateHook((void*)(imageBase + 0x720f30), jmp_GetBgmFile, (void**)(&old_GetBgmFile));
+				MH_CreateHook((void*)(imageBase + 0x72a0f0), jmp_SoundManager_GetBGMInfo, (void**)(&old_SoundManager_GetBGMInfo));
+			}
+			else
+			{
+				std::cout << "skip custom playlist injection due to no custom song is found" << std::endl;
+			}
+		}
+
+		if (!ToBool(config["General"]["Don't Run MaxiTerminal"])) {
+			char currentDir[MAX_PATH];
+			GetCurrentDirectoryA(MAX_PATH, currentDir);
+			launchMaxiTerminalIfNotRunning(currentDir);
+		}
 	}
 
 	// path fixes
@@ -408,234 +755,25 @@ static InitFunction Wmmt6Func([]()
 	injector::WriteMemoryRaw(imageBase + 0x13652B8, "TP", 2, true);
 	injector::WriteMemoryRaw(imageBase + 0x1365AC8, "TP", 2, true);
 
-	std::string value = config["General"]["CustomName"];
-	if (!value.empty())
-	{
-		/*
-		if (value.size() > 5)
-		{
-			memset(customName, 0, 256);
-			strcpy(customName, value.c_str());
-			CreateThread(0, 0, SpamCustomName, 0, 0, 0);
-		}
-
-		injector::WriteMemory<BYTE>(imageBase + 0x10942E8, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F5428, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB0, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A0, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE688, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF0, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C00, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C10, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10942EA, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F542A, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB2, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A2, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE68A, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF2, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C02, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C12, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10942EC, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F542C, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB4, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A4, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE68C, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF4, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C04, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C14, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10942EE, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F542E, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB6, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A6, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE68E, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF6, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C06, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C16, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10942F0, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F5430, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB8, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A8, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE690, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF8, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C08, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C18, 0xFF, true);
-
-		char NameChar;
-		for (int i = 0; i < value.size(); i++) {
-			NameChar = value.at(i) - 0x20;
-
-			switch (i)
-			{
-			case 0x00:
-				injector::WriteMemory<BYTE>(imageBase + 0x10942E8, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x10F5428, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B3EB0, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B75A0, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12CE688, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4BF0, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C00, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C10, NameChar, true);
-				break;
-			case 0x01:
-				injector::WriteMemory<BYTE>(imageBase + 0x10942EA, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x10F542A, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B3EB2, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B75A2, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12CE68A, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4BF2, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C02, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C12, NameChar, true);
-				break;
-			case 0x02:
-				injector::WriteMemory<BYTE>(imageBase + 0x10942EC, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x10F542C, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B3EB4, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B75A4, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12CE68C, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4BF4, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C04, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C14, NameChar, true);
-				break;
-			case 0x03:
-				injector::WriteMemory<BYTE>(imageBase + 0x10942EE, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x10F542E, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B3EB6, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B75A6, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12CE68E, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4BF6, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C06, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C16, NameChar, true);
-				break;
-			case 0x04:
-				injector::WriteMemory<BYTE>(imageBase + 0x10942F0, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x10F5430, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B3EB8, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12B75A8, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x12CE690, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4BF8, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C08, NameChar, true);
-				injector::WriteMemory<BYTE>(imageBase + 0x13C4C18, NameChar, true);
-				break;
-			}
-		}
-		injector::WriteMemory<BYTE>(imageBase + 0x10942E9, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10942EB, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10942ED, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10942EF, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10942F1, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F5429, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F542B, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F542D, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F542F, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x10F5431, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB1, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB3, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB5, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB7, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B3EB9, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A1, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A3, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A5, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A7, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12B75A9, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE689, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE68B, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE68D, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE68F, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x12CE691, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF1, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF3, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF5, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF7, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4BF9, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C01, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C03, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C05, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C07, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C09, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C11, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C13, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C15, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C17, 0xFF, true);
-		injector::WriteMemory<BYTE>(imageBase + 0x13C4C19, 0xFF, true);
-		*/
-	}
-
-	ForceFullTune = (ToBool(config["Tune"]["Force Full Tune"]));
-	ForceNeon = (ToBool(config["Tune"]["Force Neon"]));
-
-	if (ForceNeon)
-	{
-		/*
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Green") == 0)
-			NeonColour = 0x01;
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Blue") == 0)
-			NeonColour = 0x02;
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Red") == 0)
-			NeonColour = 0x03;
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Yellow") == 0)
-			NeonColour = 0x04;
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Purple") == 0)
-			NeonColour = 0x05;
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Green Pattern") == 0)
-			NeonColour = 0x06;
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Blue Pattern") == 0)
-			NeonColour = 0x07;
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Red Pattern") == 0)
-			NeonColour = 0x08;
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Yellow Pattern") == 0)
-			NeonColour = 0x09;
-		if (strcmp(config["Tune"]["Select Neon"].c_str(), "Purple Pattern") == 0)
-			NeonColour = 0x0A;
-		*/
-	}
-
-	// Fix dongle error (can be triggered by various USB hubs, dongles
+	// Fix dongle error (can be triggered by various USB hubs, dongles)
 	injector::MakeNOP(imageBase + 0x8C140F, 2, true);
-
-	//Fix crash when saving story mode and Time attack, if the error isn't handled then it doesnt crash?????
-	injector::WriteMemory<uint8_t>(imageBase + 0x8A6B5F, 0xEB, true);
-	injector::WriteMemory<uint8_t>(imageBase + 0x8A6AE8, 0x38EB, true);
 
 	// Save story stuff (only 05)
 	{
-		/*
-		// skip erasing of temp card data
-		injector::WriteMemory<uint8_t>(imageBase + 0xA54F13, 0xEB, true);
-		// Skip erasing of temp card
-		safeJMP(imageBase + 0x647FB0, LoadGameData);
-		safeJMP(imageBase + 0x65ED40, ReturnTrue);
-		safeJMP(imageBase + 0x682A00, ReturnTrue);
-		safeJMP(imageBase + 0x68CD40, ReturnTrue);
+		// Bypass Card Vendor
+		// 41 83 FB (01) 0F 85 41 18
+		injector::WriteMemoryRaw(imageBase + 0x8B8A33, "\x02", 1, true);
+		// 89 00 (44 0F B6 D8 41 3B FB 7E ..)
+		//injector::WriteMemoryRaw(imageBase + 0x667C12, "\x41\xBB\x02\x00\x00\x00\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90", 19, true);
 
-		safeJMP(imageBase + 0xACEA10, ReturnTrue);
-		safeJMP(imageBase + 0x65F1F0, ReturnTrue);
-		safeJMP(imageBase + 0x6856F0, ReturnTrue);
-
-		// Skip more
-		safeJMP(imageBase + 0x641950, ReturnTrue);
-		safeJMP(imageBase + 0xACDCE0, ReturnTrue);
-		safeJMP(imageBase + 0x6B7030, ReturnTrue);
-		safeJMP(imageBase + 0x6C73D0, ReturnTrue);
-		safeJMP(imageBase + 0xA85F20, ReturnTrue);
-		safeJMP(imageBase + 0x64F600, ReturnTrue);
-		safeJMP(imageBase + 0x61BD00, ReturnTrue);
-
-		safeJMP(imageBase + 0x6C8818, LoadWmmt5CarData);
-
-		// Save progress trigger
-		injector::WriteMemory<WORD>(imageBase + 0x655154, 0xB848, true);
-		injector::WriteMemory<uintptr_t>(imageBase + 0x655154 + 2, (uintptr_t)SaveOk, true);
-		injector::WriteMemory<DWORD>(imageBase + 0x655154 + 0xA, 0x9090D0FF, true);
-
-		// Try save later!
-		injector::MakeNOP(imageBase + 0x399A56, 0x12);
-		injector::WriteMemory<WORD>(imageBase + 0x399A56, 0xB848, true);
-		injector::WriteMemory<uintptr_t>(imageBase + 0x399A56 + 2, (uintptr_t)SaveGameData, true);
-		injector::WriteMemory<DWORD>(imageBase + 0x399A60, 0x3348D0FF, true);
-		injector::WriteMemory<WORD>(imageBase + 0x399A60 + 4, 0x90C0, true);
-		*/
+		//Fix crash when saving story mode and Time attack
+		safeJMP(imageBase + 0x8A6AC0, hook_chargeCrash_6);
 	}
+	// Check card
+	checkCard();
+
+	// Bana pass emu
+	init_BanapassEmu();
 
 	MH_EnableHook(MH_ALL_HOOKS);
 }, GameID::WMMT6);

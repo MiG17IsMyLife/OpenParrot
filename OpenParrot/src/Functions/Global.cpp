@@ -78,6 +78,9 @@ static void QuitGame()
 		system("taskkill /f /im SWArcGame-Win64-Shipping.exe");
 	}
 
+	if (GameDetect::currentGame == GameID::WMMT6)
+		system("taskkill /f /im maxiterminal.exe"); // hacky workaround to exit maxiterminal im sry
+
 	TerminateProcess(GetCurrentProcess(), 0);
 }
 

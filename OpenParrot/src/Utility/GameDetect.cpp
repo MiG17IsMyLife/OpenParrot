@@ -679,6 +679,16 @@ void GameDetect::DetectCurrentGame()
 #endif
 #endif
 #ifdef _AMD64_
+		case 0x7E804704: // MT6, 5DXP, 5DX, MT5
+			SetGameId(GameID::AmAuthD64, "AMAuthd for WMMT");
+			break;
+		case 0xF562AE46: // MaxiTerminal (With Software Revision Info)
+		case 0x2A7135DC: // Maxiterminal 10.16
+		case 0x0CB2A9E1: // Maxiterminal 18.14
+		case 0x376C90E3: // MaxiTerminal (Emi)
+		case 0x21C5FB34: // MaxiTerminal WM5 (Emi)
+			SetGameId(GameID::MaxiTerminal, "MaxiTerminal for WMMT");
+			break;
 		case 0xf322d053:
 			SetGameId(GameID::SFV, "SFV");
 			break;				  
