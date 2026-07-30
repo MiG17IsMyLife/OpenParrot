@@ -68,6 +68,16 @@ bool JVSAlreadyTaken = false;
 HANDLE touchHandle = (HANDLE)-1;
 bool touchTaken = false;
 
+#ifdef _M_AMD64
+extern const char* FfbStrPcbPipe();
+#else
+static const char* FfbStrPcbPipe() { return nullptr; }
+#endif
+
+void AddCommOverride(HANDLE hFile);
+
+static HANDLE strPcbHandle = INVALID_HANDLE_VALUE;
+
 HANDLE __stdcall Hook_CreateFileA(LPCSTR lpFileName,
 	DWORD dwDesiredAccess,
 	DWORD dwShareMode,
@@ -87,6 +97,27 @@ HANDLE __stdcall Hook_CreateFileA(LPCSTR lpFileName,
 	// ReadFile checks handle
 	if (stricmp(lpFileName, "\\\\.\\COM1") == 0)
 	{
+		// On a drive cabinet COM1 is the FFB PCB, not the touch panel. When the
+		// FFB stub is up it takes the port instead.
+		if (const char* strPcb = FfbStrPcbPipe())
+		{
+			HANDLE hResult = __CreateFileA(strPcb,
+				dwDesiredAccess,
+				dwShareMode,
+				lpSecurityAttributes,
+				dwCreationDisposition,
+				dwFlagsAndAttributes,
+				hTemplateFile);
+
+			if (hResult != INVALID_HANDLE_VALUE)
+			{
+				AddCommOverride(hResult);
+				strPcbHandle = hResult;
+			}
+
+			return hResult;
+		}
+
 		// Assume this is maxitune6...
 		// This *very* sucks, I'll write something better one day...
 		if (!touchTaken)
@@ -181,6 +212,25 @@ HANDLE __stdcall Hook_CreateFileW(LPCWSTR lpFileName,
 
 	if (wcsicmp(lpFileName, L"\\\\.\\COM1") == 0)
 	{
+		if (const char* strPcb = FfbStrPcbPipe())
+		{
+			HANDLE hResult = __CreateFileA(strPcb,
+				dwDesiredAccess,
+				dwShareMode,
+				lpSecurityAttributes,
+				dwCreationDisposition,
+				dwFlagsAndAttributes,
+				hTemplateFile);
+
+			if (hResult != INVALID_HANDLE_VALUE)
+			{
+				AddCommOverride(hResult);
+				strPcbHandle = hResult;
+			}
+
+			return hResult;
+		}
+
 		if (!touchTaken)
 		{
 			mt6SerialTouchInit();
@@ -241,6 +291,13 @@ BOOL __stdcall Hook_GetCommModemStatus(HANDLE hFile, LPDWORD lpModemStat)
 {
 	if (!IsCommHooked(hFile)) {
 		return __GetCommModemStatus(hFile, lpModemStat);
+	}
+
+	if (hFile == strPcbHandle)
+	{
+		// Look like a serial device that is present and ready.
+		*lpModemStat = 0x30;
+		return TRUE;
 	}
 
 	if (hFile != jvsHandle)
@@ -386,6 +443,21 @@ BOOL __stdcall Hook_ClearCommError(HANDLE hFile, LPDWORD lpErrors, LPCOMSTAT lpS
 	if (!IsCommHooked(hFile))
 	{
 		return __ClearCommError(hFile, lpErrors, lpStat);
+	}
+
+	if (hFile == strPcbHandle)
+	{
+		DWORD avail = 0;
+		if (!PeekNamedPipe(hFile, nullptr, 0, nullptr, &avail, nullptr))
+			avail = 0;
+
+		lpStat->cbInQue = avail;
+		lpStat->cbOutQue = 0;
+
+		if (lpErrors)
+			*lpErrors = 0;
+
+		return true;
 	}
 
 	lpStat->cbInQue = 0x7FFF;
